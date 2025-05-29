@@ -23,18 +23,19 @@ func main() {
 		return
 	}
 
-	sdClient := CreateSlackdumpClient()
-	if sdClient == nil {
+	sd := CreateSlackdumpClient()
+	if sd == nil {
 		os.Exit(1)
 	}
 
-	dbClient := CreateDatabaseClient()
-	if dbClient == nil {
+	db := CreateDatabaseClient()
+	if db == nil {
 		os.Exit(1)
 	}
 
-	defer dbClient.Close(context.Background())
+	defer db.Close(context.Background())
 
-	PackChannels(sdClient, dbClient)
-	PackUsers(sdClient, dbClient)
+	channels, _ := PackChannels(sd, db)
+	PackUsers(sd, db)
+	PackMessagesFromChannels(channels, sd, db)
 }

@@ -9,14 +9,15 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/mathiazom/slackpack/internal/dbutils"
 	"github.com/rusq/slackdump/v3"
+	sdtypes "github.com/rusq/slackdump/v3/types"
 	"os"
 )
 
-func PackChannels(sdClient *slackdump.Session, dbClient *pgx.Conn) {
-	channels, err := sdClient.GetChannels(context.Background(), "public_channel")
+func PackChannels(sd *slackdump.Session, db *pgx.Conn) (sdtypes.Channels, error) {
+	channels, err := sd.GetChannels(context.Background(), "public_channel")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "slackdumpclient 'GetChannels' failed: %v\n", err)
-		return
+		return nil, err
 	}
 
 	count := 0
@@ -26,7 +27,7 @@ func PackChannels(sdClient *slackdump.Session, dbClient *pgx.Conn) {
 			fmt.Fprintf(os.Stderr, "JSON marshal failed: %v\n", err)
 			continue
 		}
-		_, err = dbClient.Exec(context.Background(), "INSERT INTO channel (public_id, data) VALUES ($1, $2)", channel.ID, string(jsonData))
+		_, err = db.Exec(context.Background(), "INSERT INTO channel (public_id, data) VALUES ($1, $2)", channel.ID, string(jsonData))
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == dbutils.ErrCodeUniqueConstraintViolation {
@@ -43,8 +44,9 @@ func PackChannels(sdClient *slackdump.Session, dbClient *pgx.Conn) {
 
 	if count == 0 {
 		fmt.Printf("Channel snapshots are up-to-date\n")
-		return
+	} else {
+		fmt.Printf("Inserted %d channel snapshots\n", count)
 	}
 
-	fmt.Printf("Inserted %d channel snapshots\n", count)
+	return channels, nil
 }

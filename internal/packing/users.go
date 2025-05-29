@@ -12,7 +12,7 @@ import (
 	"os"
 )
 
-func PackUsers(sd *slackdump.Session, dbClient *pgx.Conn) {
+func PackUsers(sd *slackdump.Session, db *pgx.Conn) {
 	users, err := sd.GetUsers(context.Background())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "slackdumpclient 'GetUsers' failed: %v\n", err)
@@ -26,7 +26,7 @@ func PackUsers(sd *slackdump.Session, dbClient *pgx.Conn) {
 			fmt.Fprintf(os.Stderr, "JSON marshal failed: %v\n", err)
 			continue
 		}
-		_, err = dbClient.Exec(context.Background(), "INSERT INTO \"user\" (public_id, data) VALUES ($1, $2)", user.ID, string(jsonData))
+		_, err = db.Exec(context.Background(), "INSERT INTO \"user\" (public_id, data) VALUES ($1, $2)", user.ID, string(jsonData))
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == dbutils.ErrCodeUniqueConstraintViolation {
