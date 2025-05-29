@@ -14,6 +14,8 @@ WORKDIR /root/
 
 COPY --from=builder /app/slackpack .
 
+COPY --from=builder /app/migrations ./migrations
+
 RUN echo "0 2 * * * /root/slackpack >> /var/log/slackpack.log 2>&1" > /etc/crontabs/root
 
 RUN touch /var/log/slackpack.log
