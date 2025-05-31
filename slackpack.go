@@ -13,8 +13,14 @@ import (
 )
 
 func main() {
+	var packUserFlag = flag.Bool("user", false, "run user packing")
+	var packEmojiFlag = flag.Bool("emoji", false, "run emoji packing")
+	var packChannelFlag = flag.Bool("channel", false, "run channel packing")
+	var packMessageFlag = flag.Bool("message", false, "run message packing")
 	var migrate = flag.Bool("migrate", false, "run database migrations")
 	flag.Parse()
+
+	packAll := !*packUserFlag && !*packEmojiFlag && !*packChannelFlag && !*packMessageFlag
 
 	if *migrate {
 		if err := RunMigrations(); err != nil {
@@ -35,7 +41,19 @@ func main() {
 
 	defer db.Close(context.Background())
 
-	channels, _ := PackChannels(sd, db)
-	PackUsers(sd, db)
-	PackMessagesFromChannels(channels, sd, db)
+	seaweedMasterUrl := os.Getenv("SEAWEEDFS_MASTER_URL")
+
+	if packAll || *packChannelFlag || *packMessageFlag {
+		channels, err := PackChannels(sd, db)
+		if err == nil && *packMessageFlag {
+			PackMessagesFromChannels(channels, sd, db)
+		}
+	}
+
+	if packAll || *packUserFlag {
+		PackUsers(sd, db)
+	}
+	if packAll || *packEmojiFlag {
+		PackEmojis(sd, db, seaweedMasterUrl)
+	}
 }

@@ -4,6 +4,7 @@ go 1.24.3
 
 require (
 	github.com/jackc/pgx/v5 v5.7.5
+	github.com/rusq/slack v0.9.6-0.20250408103104-dd80d1b6337f
 	github.com/rusq/slackdump/v3 v3.1.3
 )
 
@@ -52,7 +53,6 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rusq/chttp v1.0.2 // indirect
 	github.com/rusq/fsadapter v1.1.0 // indirect
-	github.com/rusq/slack v0.9.6-0.20250408103104-dd80d1b6337f // indirect
 	github.com/rusq/slackauth v0.6.1 // indirect
 	github.com/rusq/tagops v0.1.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect

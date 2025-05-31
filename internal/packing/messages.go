@@ -21,7 +21,7 @@ func PackMessagesFromChannels(channels sdtypes.Channels, sd *slackdump.Session, 
 func PackChannelMessages(channel slack.Channel, sd *slackdump.Session, db *pgx.Conn) {
 	conversation, err := sd.DumpAll(context.Background(), channel.ID)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "slackdumpclient 'DumpAll' failed for channel %s: %v\n", channel.ID, err)
+		fmt.Fprintf(os.Stderr, "slackdump 'DumpAll' failed for channel %s: %v\n", channel.ID, err)
 		return
 	}
 

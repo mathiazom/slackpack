@@ -15,7 +15,7 @@ import (
 func PackUsers(sd *slackdump.Session, db *pgx.Conn) {
 	users, err := sd.GetUsers(context.Background())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "slackdumpclient 'GetUsers' failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "slackdump 'GetUsers' failed: %v\n", err)
 		return
 	}
 
@@ -33,7 +33,7 @@ func PackUsers(sd *slackdump.Session, db *pgx.Conn) {
 				// user is up-to-date
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "Insert failed for user %s: %v\n", user.ID, err)
+			fmt.Fprintf(os.Stderr, "insert failed for user %s: %v\n", user.ID, err)
 			continue
 		}
 
