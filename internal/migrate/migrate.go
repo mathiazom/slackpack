@@ -71,13 +71,9 @@ func loadMigrations(dir string) ([]Migration, error) {
 		}
 
 		filename := d.Name()
-		ok, timestamp, name, direction := parseMigrationFilename(filename)
+		ok, timestamp, name := parseMigrationFilename(filename)
 		if !ok {
 			fmt.Fprintf(os.Stderr, "%s: unknown migration file format\n", filename)
-			return nil
-		}
-
-		if direction != Up {
 			return nil
 		}
 
@@ -107,36 +103,18 @@ func loadMigrations(dir string) ([]Migration, error) {
 	return migrations, nil
 }
 
-type MigrationDirection int
-
-const (
-	Up MigrationDirection = iota
-	Down
-)
-
-func parseMigrationFilename(filename string) (ok bool, timestamp string, name string, direction MigrationDirection) {
+func parseMigrationFilename(filename string) (ok bool, timestamp string, name string) {
 	if !strings.HasSuffix(filename, ".sql") {
-		return false, timestamp, name, Up
+		return false, timestamp, name
 	}
 	nameWithoutExt := strings.TrimSuffix(filename, ".sql")
-	lastDot := strings.LastIndex(nameWithoutExt, ".")
-	if lastDot == -1 {
-		return false, timestamp, name, Up
-	}
-	directionString := nameWithoutExt[lastDot+1:]
-	timeAndName := nameWithoutExt[:lastDot]
-	parts := strings.Split(timeAndName, "_")
+	parts := strings.SplitN(nameWithoutExt, "_", 2)
 	if len(parts) < 2 {
-		return false, timestamp, name, Up
+		return false, timestamp, name
 	}
 	timestamp = parts[0]
 	name = parts[1]
-	if directionString == "up" {
-		direction = Up
-	} else {
-		direction = Down
-	}
-	return true, timestamp, name, direction
+	return true, timestamp, name
 }
 
 func getAppliedMigrations(conn *pgx.Conn) (map[string]bool, error) {
