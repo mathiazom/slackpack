@@ -1,0 +1,1 @@
+ALTER TABLE message ADD COLUMN thread_ts VARCHAR(255);

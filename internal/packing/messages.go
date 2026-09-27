@@ -32,9 +32,14 @@ func PackChannelMessages(channel slack.Channel, sd *slackdump.Session, db *pgx.C
 	}
 
 	messages := conversation.Messages
+	flattened := messages[:0:0]
+	for _, message := range messages {
+		flattened = append(flattened, message)
+		flattened = append(flattened, message.ThreadReplies...)
+	}
 
 	errorCount := 0
-	for _, message := range messages {
+	for _, message := range flattened {
 		messageId := message.Msg.Timestamp
 		jsonData, err := json.Marshal(message)
 		if err != nil {
@@ -47,7 +52,12 @@ func PackChannelMessages(channel slack.Channel, sd *slackdump.Session, db *pgx.C
 			fmt.Fprintf(os.Stderr, "file archiving failed for message %s: %v\n", messageId, fileErr)
 		}
 
-		_, err = db.Exec(context.Background(), "INSERT INTO message (public_id, channel_id, data) VALUES ($1, $2, $3) ON CONFLICT (public_id) DO UPDATE SET data = $3", messageId, channelDbId, string(jsonData))
+		var threadTs *string
+		if message.Msg.ThreadTimestamp != "" {
+			threadTs = &message.Msg.ThreadTimestamp
+		}
+
+		_, err = db.Exec(context.Background(), "INSERT INTO message (public_id, channel_id, data, thread_ts) VALUES ($1, $2, $3, $4) ON CONFLICT (public_id) DO UPDATE SET data = $3, thread_ts = $4", messageId, channelDbId, string(jsonData), threadTs)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "upsert failed for message %s: %v\n", messageId, err)
 			errorCount++
@@ -56,7 +66,7 @@ func PackChannelMessages(channel slack.Channel, sd *slackdump.Session, db *pgx.C
 	}
 
 	if errorCount > 0 {
-		if errorCount < len(messages) {
+		if errorCount < len(flattened) {
 			fmt.Printf("Message snapshots partially updated (%d failures) for channel %s\n", errorCount, channel.ID)
 			return
 		}
