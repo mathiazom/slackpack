@@ -9,7 +9,10 @@ import (
 	. "github.com/mathiazom/slackpack/internal/dbutils"
 	. "github.com/mathiazom/slackpack/internal/seaweedfs"
 	"github.com/rusq/slackdump/v3"
+	"io"
+	"net/http"
 	"os"
+	"path"
 	"strings"
 )
 
@@ -66,7 +69,13 @@ func PackEmojis(sd *slackdump.Session, db *pgx.Conn, seaweedMasterUrl string) {
 			continue
 		}
 
-		fileId, err := UploadImageToSeaweedFS(seaweedMasterUrl, slackUrl)
+		data, err := fetchEmojiImage(slackUrl)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "download failed for emoji '%s': %v\n", emojiId, err)
+			continue
+		}
+
+		fileId, err := UploadToSeaweedFS(seaweedMasterUrl, data, path.Base(slackUrl))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "upload failed for emoji '%s': %v\n", emojiId, err)
 			continue
@@ -120,4 +129,18 @@ func PackEmojis(sd *slackdump.Session, db *pgx.Conn, seaweedMasterUrl string) {
 	}
 
 	fmt.Printf("Inserted %d emoji snapshots\n", count)
+}
+
+func fetchEmojiImage(slackUrl string) ([]byte, error) {
+	resp, err := http.Get(slackUrl)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetch failed with status: %d", resp.StatusCode)
+	}
+
+	return io.ReadAll(resp.Body)
 }

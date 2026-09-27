@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"mime/multipart"
 	"net/http"
 )
@@ -15,7 +14,7 @@ type AssignResponse struct {
 	PublicURL string `json:"publicUrl"`
 }
 
-func UploadImageToSeaweedFS(masterURL, imageURL string) (string, error) {
+func UploadToSeaweedFS(masterURL string, data []byte, filename string) (string, error) {
 	resp, err := http.Get(masterURL + "/dir/assign")
 	if err != nil {
 		return "", err
@@ -27,25 +26,14 @@ func UploadImageToSeaweedFS(masterURL, imageURL string) (string, error) {
 		return "", err
 	}
 
-	imgResp, err := http.Get(imageURL)
-	if err != nil {
-		return "", err
-	}
-	defer imgResp.Body.Close()
-
-	imgData, err := io.ReadAll(imgResp.Body)
-	if err != nil {
-		return "", err
-	}
-
 	// TODO: stream?
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
-	part, err := writer.CreateFormFile("file", "image")
+	part, err := writer.CreateFormFile("file", filename)
 	if err != nil {
 		return "", err
 	}
-	part.Write(imgData)
+	part.Write(data)
 	writer.Close()
 
 	// TODO: https?
@@ -59,8 +47,7 @@ func UploadImageToSeaweedFS(masterURL, imageURL string) (string, error) {
 		uploadReq.Header.Set("Authorization", jwt)
 	}
 
-	client := &http.Client{}
-	uploadResp, err := client.Do(uploadReq)
+	uploadResp, err := http.DefaultClient.Do(uploadReq)
 	if err != nil {
 		return "", err
 	}

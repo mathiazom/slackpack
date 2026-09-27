@@ -46,7 +46,7 @@ func main() {
 	if packAll || *packChannelFlag || *packMessageFlag {
 		channels, err := PackChannels(sd, db)
 		if err == nil && (packAll || *packMessageFlag) {
-			PackMessagesFromChannels(channels, sd, db)
+			PackMessagesFromChannels(channels, sd, db, seaweedMasterUrl)
 		}
 	}
 

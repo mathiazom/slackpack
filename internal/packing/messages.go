@@ -12,13 +12,13 @@ import (
 	"os"
 )
 
-func PackMessagesFromChannels(channels sdtypes.Channels, sd *slackdump.Session, db *pgx.Conn) {
+func PackMessagesFromChannels(channels sdtypes.Channels, sd *slackdump.Session, db *pgx.Conn, seaweedMasterUrl string) {
 	for _, channel := range channels {
-		PackChannelMessages(channel, sd, db)
+		PackChannelMessages(channel, sd, db, seaweedMasterUrl)
 	}
 }
 
-func PackChannelMessages(channel slack.Channel, sd *slackdump.Session, db *pgx.Conn) {
+func PackChannelMessages(channel slack.Channel, sd *slackdump.Session, db *pgx.Conn, seaweedMasterUrl string) {
 	conversation, err := sd.DumpAll(context.Background(), channel.ID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "slackdump 'DumpAll' failed for channel %s: %v\n", channel.ID, err)
@@ -41,6 +41,12 @@ func PackChannelMessages(channel slack.Channel, sd *slackdump.Session, db *pgx.C
 			fmt.Fprintf(os.Stderr, "JSON marshal failed for message %s: %v\n", messageId, err)
 			continue
 		}
+
+		jsonData, fileErr := archiveMessageFiles(db, sd, seaweedMasterUrl, jsonData)
+		if fileErr != nil {
+			fmt.Fprintf(os.Stderr, "file archiving failed for message %s: %v\n", messageId, fileErr)
+		}
+
 		_, err = db.Exec(context.Background(), "INSERT INTO message (public_id, channel_id, data) VALUES ($1, $2, $3) ON CONFLICT (public_id) DO UPDATE SET data = $3", messageId, channelDbId, string(jsonData))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "upsert failed for message %s: %v\n", messageId, err)
