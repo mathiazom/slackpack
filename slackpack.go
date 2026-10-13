@@ -51,7 +51,7 @@ func main() {
 	}
 
 	if packAll || *packUserFlag {
-		PackUsers(sd, db)
+		PackUsers(sd, db, seaweedMasterUrl)
 	}
 	if packAll || *packEmojiFlag {
 		PackEmojis(sd, db, seaweedMasterUrl)
