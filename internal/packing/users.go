@@ -15,6 +15,7 @@ import (
 func PackUsers(sd *slackdump.Session, db *pgx.Conn, seaweedMasterUrl string) {
 	packUserSnapshots(sd, db)
 	archiveSnapshotAvatars(db, seaweedMasterUrl)
+	embedSnapshotAvatarSince(db)
 }
 
 func packUserSnapshots(sd *slackdump.Session, db *pgx.Conn) {
@@ -31,8 +32,8 @@ func packUserSnapshots(sd *slackdump.Session, db *pgx.Conn) {
 			fmt.Fprintf(os.Stderr, "JSON marshal failed: %v\n", err)
 			continue
 		}
-		// archived avatar pointers are embedded after insertion, so they are not part of
-		// the user's Slack data and must not count as a change
+		// archived avatar pointers and avatar since are embedded after insertion, so they
+		// are not part of the user's Slack data and must not count as a change
 		query := `
 			WITH latest_snapshot AS (
 				SELECT data
@@ -46,7 +47,7 @@ func packUserSnapshots(sd *slackdump.Session, db *pgx.Conn) {
 			WHERE NOT EXISTS (
 				SELECT 1 
 				FROM latest_snapshot 
-				WHERE data #- '{profile,archived_avatar_72_id}' #- '{profile,archived_avatar_512_id}' = $2::jsonb
+				WHERE data #- '{profile,archived_avatar_72_id}' #- '{profile,archived_avatar_512_id}' #- '{profile,archived_avatar_since}' = $2::jsonb
 			)
 		`
 		tag, err := db.Exec(context.Background(), query, user.ID, string(jsonData))
