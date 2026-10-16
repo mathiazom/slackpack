@@ -12,9 +12,9 @@ import (
 )
 
 // archiveMessageFiles resolves each file attached to a message to an archived copy in
-// SeaweedFS, injecting the resulting pointer (and that of a converted copy, if any, see
-// convertMessageFiles) into the file's JSON object so slackback never needs to know
-// about the `file` table. Returns the updated JSON even when some
+// SeaweedFS, injecting the resulting pointer (and the results of file passes done
+// already, see runFilePass) into the file's JSON object so slackback never needs to
+// know about the `file` table. Returns the updated JSON even when some
 // files failed to archive, so the message is still stored and the failed files can be
 // retried on a later pack run.
 func archiveMessageFiles(db *pgx.Conn, sd *slackdump.Session, seaweedMasterUrl string, jsonData []byte) ([]byte, error) {
@@ -44,7 +44,7 @@ func archiveMessageFiles(db *pgx.Conn, sd *slackdump.Session, seaweedMasterUrl s
 			name = slackFileId
 		}
 
-		fileId, converted, err := archiveMessageFile(db, sd, seaweedMasterUrl, slackFileId, name, downloadUrl)
+		fileId, fields, err := archiveMessageFile(db, sd, seaweedMasterUrl, slackFileId, name, downloadUrl)
 		if err != nil {
 			if firstErr == nil {
 				firstErr = err
@@ -52,8 +52,8 @@ func archiveMessageFiles(db *pgx.Conn, sd *slackdump.Session, seaweedMasterUrl s
 			continue
 		}
 		file["archived_file_id"] = fileId
-		if converted != nil {
-			converted.embed(file)
+		for key, value := range fields {
+			file[key] = value
 		}
 	}
 
@@ -66,17 +66,26 @@ func archiveMessageFiles(db *pgx.Conn, sd *slackdump.Session, seaweedMasterUrl s
 }
 
 // archiveMessageFile resolves a Slack file to its archived copy, archiving it on first
-// sight, along with its converted copy when one has been made already.
-func archiveMessageFile(db *pgx.Conn, sd *slackdump.Session, seaweedMasterUrl, slackFileId, name, downloadUrl string) (string, *convertedFile, error) {
+// sight, along with the fields to embed for file passes done already.
+func archiveMessageFile(db *pgx.Conn, sd *slackdump.Session, seaweedMasterUrl, slackFileId, name, downloadUrl string) (string, map[string]interface{}, error) {
 	var fileId string
-	var convertedFileId *string
-	var convertedWidth, convertedHeight *int
-	err := db.QueryRow(context.Background(), "SELECT file_id, converted_file_id, converted_width, converted_height FROM file WHERE public_id = $1", slackFileId).Scan(&fileId, &convertedFileId, &convertedWidth, &convertedHeight)
+	var convertedFileId, probedCodec *string
+	var convertedWidth, convertedHeight, probedWidth, probedHeight *int
+	err := db.QueryRow(context.Background(), "SELECT file_id, converted_file_id, converted_width, converted_height, probed_width, probed_height, probed_codec FROM file WHERE public_id = $1", slackFileId).
+		Scan(&fileId, &convertedFileId, &convertedWidth, &convertedHeight, &probedWidth, &probedHeight, &probedCodec)
 	if err == nil {
-		if convertedFileId == nil {
-			return fileId, nil, nil
+		fields := map[string]interface{}{}
+		if convertedFileId != nil {
+			for key, value := range (convertedFile{*convertedFileId, *convertedWidth, *convertedHeight}).fields() {
+				fields[key] = value
+			}
 		}
-		return fileId, &convertedFile{*convertedFileId, *convertedWidth, *convertedHeight}, nil
+		if probedCodec != nil {
+			for key, value := range (probedVideo{*probedWidth, *probedHeight, *probedCodec}).fields() {
+				fields[key] = value
+			}
+		}
+		return fileId, fields, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return "", nil, fmt.Errorf("failed to check file existence '%s': %w", slackFileId, err)

@@ -16,7 +16,8 @@ func PackMessagesFromChannels(channels sdtypes.Channels, sd *slackdump.Session, 
 	for _, channel := range channels {
 		PackChannelMessages(channel, sd, db, seaweedMasterUrl)
 	}
-	convertMessageFiles(db, seaweedMasterUrl)
+	runFilePass(db, seaweedMasterUrl, conversionPass)
+	runFilePass(db, seaweedMasterUrl, probePass)
 }
 
 func PackChannelMessages(channel slack.Channel, sd *slackdump.Session, db *pgx.Conn, seaweedMasterUrl string) {

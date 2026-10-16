@@ -3,6 +3,7 @@ module github.com/mathiazom/slackpack
 go 1.25.0
 
 require (
+	github.com/abema/go-mp4 v1.7.3
 	github.com/gen2brain/heic v0.7.2
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/rusq/slack v0.9.6-0.20250408103104-dd80d1b6337f
