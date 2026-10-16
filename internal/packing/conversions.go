@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/gen2brain/heic"
-	"github.com/jackc/pgx/v5"
 	. "github.com/mathiazom/slackpack/internal/seaweedfs"
 	"golang.org/x/image/tiff"
 )
@@ -66,10 +65,10 @@ var conversionPass = filePass{
 
 // convertFile resolves an archived file to its archived JPEG copy, converting it on
 // first sight.
-func convertFile(db *pgx.Conn, seaweedMasterUrl string, file pendingMessageFile) (map[string]interface{}, error) {
+func convertFile(deps filePassDeps, file pendingMessageFile) (map[string]interface{}, error) {
 	var convertedFileId *string
 	var convertedWidth, convertedHeight *int
-	err := db.QueryRow(context.Background(), "SELECT converted_file_id, converted_width, converted_height FROM file WHERE public_id = $1", file.slackFileId).Scan(&convertedFileId, &convertedWidth, &convertedHeight)
+	err := deps.db.QueryRow(context.Background(), "SELECT converted_file_id, converted_width, converted_height FROM file WHERE public_id = $1", file.slackFileId).Scan(&convertedFileId, &convertedWidth, &convertedHeight)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check file conversion: %w", err)
 	}
@@ -77,7 +76,7 @@ func convertFile(db *pgx.Conn, seaweedMasterUrl string, file pendingMessageFile)
 		return convertedFile{*convertedFileId, *convertedWidth, *convertedHeight}.fields(), nil
 	}
 
-	original, err := DownloadFromSeaweedFS(seaweedMasterUrl, file.archivedFileId)
+	original, err := DownloadFromSeaweedFS(deps.seaweedMasterUrl, file.archivedFileId)
 	if err != nil {
 		return nil, fmt.Errorf("download failed: %w", err)
 	}
@@ -87,12 +86,12 @@ func convertFile(db *pgx.Conn, seaweedMasterUrl string, file pendingMessageFile)
 		return nil, fmt.Errorf("%w: %v", errFileUnprocessable, err)
 	}
 
-	uploadedId, err := UploadToSeaweedFS(seaweedMasterUrl, data, jpegName(file.name, file.slackFileId))
+	uploadedId, err := UploadToSeaweedFS(deps.seaweedMasterUrl, data, jpegName(file.name, file.slackFileId))
 	if err != nil {
 		return nil, fmt.Errorf("upload failed: %w", err)
 	}
 
-	_, err = db.Exec(context.Background(), "UPDATE file SET converted_file_id = $2, converted_width = $3, converted_height = $4 WHERE public_id = $1", file.slackFileId, uploadedId, width, height)
+	_, err = deps.db.Exec(context.Background(), "UPDATE file SET converted_file_id = $2, converted_width = $3, converted_height = $4 WHERE public_id = $1", file.slackFileId, uploadedId, width, height)
 	if err != nil {
 		return nil, fmt.Errorf("update failed: %w", err)
 	}
@@ -101,14 +100,18 @@ func convertFile(db *pgx.Conn, seaweedMasterUrl string, file pendingMessageFile)
 	return convertedFile{uploadedId, width, height}.fields(), nil
 }
 
-// encodeJpeg decodes an image and re-encodes it as JPEG, flattening any transparency
-// onto white (JPEG has no alpha, and would otherwise turn it black).
+// encodeJpeg decodes an image and re-encodes it as JPEG.
 func encodeJpeg(original []byte, decode func(io.Reader) (image.Image, error)) ([]byte, int, int, error) {
 	img, err := decode(bytes.NewReader(original))
 	if err != nil {
 		return nil, 0, 0, err
 	}
+	return encodeImageJpeg(img)
+}
 
+// encodeImageJpeg encodes an image as JPEG, flattening any transparency onto white
+// (JPEG has no alpha, and would otherwise turn it black).
+func encodeImageJpeg(img image.Image) ([]byte, int, int, error) {
 	if opaque, ok := img.(interface{ Opaque() bool }); !ok || !opaque.Opaque() {
 		flattened := image.NewRGBA(img.Bounds())
 		draw.Draw(flattened, flattened.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)

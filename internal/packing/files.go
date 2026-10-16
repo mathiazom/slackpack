@@ -69,10 +69,10 @@ func archiveMessageFiles(db *pgx.Conn, sd *slackdump.Session, seaweedMasterUrl s
 // sight, along with the fields to embed for file passes done already.
 func archiveMessageFile(db *pgx.Conn, sd *slackdump.Session, seaweedMasterUrl, slackFileId, name, downloadUrl string) (string, map[string]interface{}, error) {
 	var fileId string
-	var convertedFileId, probedCodec *string
-	var convertedWidth, convertedHeight, probedWidth, probedHeight *int
-	err := db.QueryRow(context.Background(), "SELECT file_id, converted_file_id, converted_width, converted_height, probed_width, probed_height, probed_codec FROM file WHERE public_id = $1", slackFileId).
-		Scan(&fileId, &convertedFileId, &convertedWidth, &convertedHeight, &probedWidth, &probedHeight, &probedCodec)
+	var convertedFileId, probedCodec, thumbFileId, posterFileId *string
+	var convertedWidth, convertedHeight, probedWidth, probedHeight, thumbWidth, thumbHeight, posterWidth, posterHeight *int
+	err := db.QueryRow(context.Background(), "SELECT file_id, converted_file_id, converted_width, converted_height, probed_width, probed_height, probed_codec, thumb_file_id, thumb_width, thumb_height, poster_file_id, poster_width, poster_height FROM file WHERE public_id = $1", slackFileId).
+		Scan(&fileId, &convertedFileId, &convertedWidth, &convertedHeight, &probedWidth, &probedHeight, &probedCodec, &thumbFileId, &thumbWidth, &thumbHeight, &posterFileId, &posterWidth, &posterHeight)
 	if err == nil {
 		fields := map[string]interface{}{}
 		if convertedFileId != nil {
@@ -82,6 +82,16 @@ func archiveMessageFile(db *pgx.Conn, sd *slackdump.Session, seaweedMasterUrl, s
 		}
 		if probedCodec != nil {
 			for key, value := range (probedVideo{*probedWidth, *probedHeight, *probedCodec}).fields() {
+				fields[key] = value
+			}
+		}
+		if thumbFileId != nil {
+			for key, value := range (thumbFile{*thumbFileId, *thumbWidth, *thumbHeight}).fields() {
+				fields[key] = value
+			}
+		}
+		if posterFileId != nil {
+			for key, value := range (posterFile{*posterFileId, *posterWidth, *posterHeight}).fields() {
 				fields[key] = value
 			}
 		}

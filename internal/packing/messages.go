@@ -8,16 +8,20 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/rusq/slack"
 	"github.com/rusq/slackdump/v3"
+	"github.com/rusq/slackdump/v3/auth"
 	sdtypes "github.com/rusq/slackdump/v3/types"
 	"os"
 )
 
-func PackMessagesFromChannels(channels sdtypes.Channels, sd *slackdump.Session, db *pgx.Conn, seaweedMasterUrl string) {
+func PackMessagesFromChannels(channels sdtypes.Channels, sd *slackdump.Session, slackAuth auth.Provider, db *pgx.Conn, seaweedMasterUrl string) {
 	for _, channel := range channels {
 		PackChannelMessages(channel, sd, db, seaweedMasterUrl)
 	}
-	runFilePass(db, seaweedMasterUrl, conversionPass)
-	runFilePass(db, seaweedMasterUrl, probePass)
+	deps := filePassDeps{db, sd, slackAuth, seaweedMasterUrl}
+	runFilePass(deps, conversionPass)
+	runFilePass(deps, probePass)
+	runFilePass(deps, thumbnailPass)
+	runFilePass(deps, posterPass)
 }
 
 func PackChannelMessages(channel slack.Channel, sd *slackdump.Session, db *pgx.Conn, seaweedMasterUrl string) {

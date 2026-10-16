@@ -29,7 +29,7 @@ func main() {
 		return
 	}
 
-	sd := CreateSlackdumpClient()
+	sd, slackAuth := CreateSlackdumpClient()
 	if sd == nil {
 		os.Exit(1)
 	}
@@ -46,7 +46,7 @@ func main() {
 	if packAll || *packChannelFlag || *packMessageFlag {
 		channels, err := PackChannels(sd, db)
 		if err == nil && (packAll || *packMessageFlag) {
-			PackMessagesFromChannels(channels, sd, db, seaweedMasterUrl)
+			PackMessagesFromChannels(channels, sd, slackAuth, db, seaweedMasterUrl)
 		}
 	}
 

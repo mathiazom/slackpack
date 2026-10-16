@@ -8,7 +8,6 @@ import (
 	"io"
 
 	"github.com/abema/go-mp4"
-	"github.com/jackc/pgx/v5"
 	. "github.com/mathiazom/slackpack/internal/seaweedfs"
 )
 
@@ -50,10 +49,10 @@ var probePass = filePass{
 }
 
 // probeFile resolves an archived video to its video track, probing it on first sight.
-func probeFile(db *pgx.Conn, seaweedMasterUrl string, file pendingMessageFile) (map[string]interface{}, error) {
+func probeFile(deps filePassDeps, file pendingMessageFile) (map[string]interface{}, error) {
 	var width, height *int
 	var codec *string
-	err := db.QueryRow(context.Background(), "SELECT probed_width, probed_height, probed_codec FROM file WHERE public_id = $1", file.slackFileId).Scan(&width, &height, &codec)
+	err := deps.db.QueryRow(context.Background(), "SELECT probed_width, probed_height, probed_codec FROM file WHERE public_id = $1", file.slackFileId).Scan(&width, &height, &codec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check file probe: %w", err)
 	}
@@ -61,7 +60,7 @@ func probeFile(db *pgx.Conn, seaweedMasterUrl string, file pendingMessageFile) (
 		return probedVideo{*width, *height, *codec}.fields(), nil
 	}
 
-	original, err := DownloadFromSeaweedFS(seaweedMasterUrl, file.archivedFileId)
+	original, err := DownloadFromSeaweedFS(deps.seaweedMasterUrl, file.archivedFileId)
 	if err != nil {
 		return nil, fmt.Errorf("download failed: %w", err)
 	}
@@ -71,7 +70,7 @@ func probeFile(db *pgx.Conn, seaweedMasterUrl string, file pendingMessageFile) (
 		return nil, fmt.Errorf("%w: %v", errFileUnprocessable, err)
 	}
 
-	_, err = db.Exec(context.Background(), "UPDATE file SET probed_width = $2, probed_height = $3, probed_codec = $4 WHERE public_id = $1", file.slackFileId, video.width, video.height, video.codec)
+	_, err = deps.db.Exec(context.Background(), "UPDATE file SET probed_width = $2, probed_height = $3, probed_codec = $4 WHERE public_id = $1", file.slackFileId, video.width, video.height, video.codec)
 	if err != nil {
 		return nil, fmt.Errorf("update failed: %w", err)
 	}

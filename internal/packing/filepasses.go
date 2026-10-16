@@ -8,26 +8,39 @@ import (
 	"os"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/rusq/slackdump/v3"
+	"github.com/rusq/slackdump/v3/auth"
 )
 
-// errFileUnprocessable, wrapped by a pass's process, signals an archived original it
-// can never handle (it can't be decoded or parsed), as opposed to a transient failure
-// that should be retried on a later pack run. It's recorded in the pass's failedColumn.
+// errFileUnprocessable, wrapped by a pass's process, signals a file it can never handle
+// (the original can't be decoded or parsed, or what the pass needs from Slack is gone),
+// as opposed to a transient failure that should be retried on a later pack run. It's
+// recorded in the pass's failedColumn.
 var errFileUnprocessable = errors.New("file can't be processed")
 
 // filePass derives something from archived message files of some types (a converted
-// copy, media metadata), stores it on the `file` row and embeds it into the message
-// JSON, so slackback never needs to know about the `file` table.
+// copy, media metadata, a thumbnail), stores it on the `file` row and embeds it into
+// the message JSON, so slackback never needs to know about the `file` table.
 type filePass struct {
 	name      string // for logs
 	mimetypes []string
+	// where optionally narrows the files further, as an SQL condition on the file
+	// object f.value, so files the pass has nothing to do for are never pending.
+	where string
 	// embeddedKey marks a file object the pass is done with.
 	embeddedKey string
 	// failedColumn on `file` marks an original that is errFileUnprocessable.
 	failedColumn string
 	// process returns the fields to embed into the file's JSON object, resolving
 	// from the `file` row when the file was processed already.
-	process func(db *pgx.Conn, seaweedMasterUrl string, file pendingMessageFile) (map[string]interface{}, error)
+	process func(deps filePassDeps, file pendingMessageFile) (map[string]interface{}, error)
+}
+
+type filePassDeps struct {
+	db               *pgx.Conn
+	sd               *slackdump.Session
+	slackAuth        auth.Provider
+	seaweedMasterUrl string
 }
 
 // pendingMessageFile is an archived file object in a message's JSON, by position.
@@ -38,14 +51,20 @@ type pendingMessageFile struct {
 	archivedFileId string
 	name           string
 	mimetype       string
+	// object is the whole file object, for any other fields a pass needs.
+	object map[string]interface{}
 }
 
 // runFilePass runs a file pass over every archived message file it isn't done with.
-// This backfills messages no longer in Slack too, since passes read the archived
-// original. Files whose original was recorded as unprocessable are skipped.
-func runFilePass(db *pgx.Conn, seaweedMasterUrl string, pass filePass) {
+// Passes reading the archived original backfill messages no longer in Slack too.
+// Files recorded as unprocessable are skipped.
+func runFilePass(deps filePassDeps, pass filePass) {
+	where := "TRUE"
+	if pass.where != "" {
+		where = pass.where
+	}
 	query := `
-		SELECT m.id, (f.idx - 1)::int, f.value->>'id', f.value->>'archived_file_id', coalesce(f.value->>'name', ''), lower(f.value->>'mimetype')
+		SELECT m.id, (f.idx - 1)::int, f.value->>'id', f.value->>'archived_file_id', coalesce(f.value->>'name', ''), lower(f.value->>'mimetype'), f.value
 		FROM message m
 		CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(m.data->'files') = 'array' THEN m.data->'files' ELSE '[]' END) WITH ORDINALITY AS f(value, idx)
 		LEFT JOIN file failed ON failed.public_id = f.value->>'id' AND failed.` + pass.failedColumn + ` IS NOT NULL
@@ -53,16 +72,17 @@ func runFilePass(db *pgx.Conn, seaweedMasterUrl string, pass filePass) {
 		  AND NOT (f.value ? $2)
 		  AND lower(f.value->>'mimetype') = ANY($1)
 		  AND failed.id IS NULL
+		  AND (` + where + `)
 		ORDER BY m.id
 	`
-	rows, err := db.Query(context.Background(), query, pass.mimetypes, pass.embeddedKey)
+	rows, err := deps.db.Query(context.Background(), query, pass.mimetypes, pass.embeddedKey)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to query message files to %s: %v\n", pass.name, err)
 		return
 	}
 	files, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (pendingMessageFile, error) {
 		var f pendingMessageFile
-		err := row.Scan(&f.messageId, &f.index, &f.slackFileId, &f.archivedFileId, &f.name, &f.mimetype)
+		err := row.Scan(&f.messageId, &f.index, &f.slackFileId, &f.archivedFileId, &f.name, &f.mimetype, &f.object)
 		return f, err
 	})
 	if err != nil {
@@ -72,9 +92,9 @@ func runFilePass(db *pgx.Conn, seaweedMasterUrl string, pass filePass) {
 
 	count := 0
 	for _, f := range files {
-		fields, err := pass.process(db, seaweedMasterUrl, f)
+		fields, err := pass.process(deps, f)
 		if errors.Is(err, errFileUnprocessable) {
-			_, dbErr := db.Exec(context.Background(), "UPDATE file SET "+pass.failedColumn+" = CURRENT_TIMESTAMP WHERE public_id = $1", f.slackFileId)
+			_, dbErr := deps.db.Exec(context.Background(), "UPDATE file SET "+pass.failedColumn+" = CURRENT_TIMESTAMP WHERE public_id = $1", f.slackFileId)
 			if dbErr != nil {
 				fmt.Fprintf(os.Stderr, "failed to record unprocessable file '%s': %v\n", f.slackFileId, dbErr)
 				continue
@@ -86,7 +106,7 @@ func runFilePass(db *pgx.Conn, seaweedMasterUrl string, pass filePass) {
 			fmt.Fprintf(os.Stderr, "failed to %s file '%s': %v\n", pass.name, f.slackFileId, err)
 			continue
 		}
-		if err := embedFileFields(db, f.messageId, f.index, fields); err != nil {
+		if err := embedFileFields(deps.db, f.messageId, f.index, fields); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to embed %s result in message %d: %v\n", pass.name, f.messageId, err)
 			continue
 		}
