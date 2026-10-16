@@ -1,11 +1,13 @@
 module github.com/mathiazom/slackpack
 
-go 1.24.3
+go 1.25.0
 
 require (
+	github.com/gen2brain/heic v0.7.2
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/rusq/slack v0.9.6-0.20250408103104-dd80d1b6337f
 	github.com/rusq/slackdump/v3 v3.1.3
+	golang.org/x/image v0.45.0
 )
 
 require (
@@ -25,6 +27,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.1 // indirect
 	github.com/deckarep/golang-set/v2 v2.8.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.9 // indirect
@@ -55,6 +58,7 @@ require (
 	github.com/rusq/fsadapter v1.1.0 // indirect
 	github.com/rusq/slackauth v0.6.1 // indirect
 	github.com/rusq/tagops v0.1.1 // indirect
+	github.com/tetratelabs/wazero v1.12.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/ysmood/fetchup v0.3.0 // indirect
 	github.com/ysmood/goob v0.4.0 // indirect
@@ -63,9 +67,9 @@ require (
 	github.com/ysmood/leakless v0.9.0 // indirect
 	golang.org/x/crypto v0.38.0 // indirect
 	golang.org/x/net v0.40.0 // indirect
-	golang.org/x/sync v0.14.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/term v0.32.0 // indirect
-	golang.org/x/text v0.25.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
 )
