@@ -8,28 +8,47 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/mathiazom/slackpack/internal/dbutils"
-	"github.com/rusq/slackdump/v3"
+	"github.com/mathiazom/slackpack/internal/slackapi"
 	"os"
 )
 
-func PackUsers(sd *slackdump.Session, db *pgx.Conn, seaweedMasterUrl string) {
-	packUserSnapshots(sd, db)
+// volatileUserKeys change without anything worth a snapshot happening (statuses and
+// huddles come and go during the day), so they aren't stored.
+var volatileUserKeys = [][]string{
+	{"profile", "status_text"},
+	{"profile", "status_text_canonical"},
+	{"profile", "status_emoji"},
+	{"profile", "status_emoji_display_info"},
+	{"profile", "status_expiration"},
+	{"profile", "huddle_state"},
+	{"profile", "huddle_state_expiration_ts"},
+}
+
+func PackUsers(slackClient *slackapi.Client, db *pgx.Conn, seaweedMasterUrl string) {
+	packUserSnapshots(slackClient, db)
 	archiveSnapshotAvatars(db, seaweedMasterUrl)
 	embedSnapshotAvatarSince(db)
 }
 
-func packUserSnapshots(sd *slackdump.Session, db *pgx.Conn) {
-	users, err := sd.GetUsers(context.Background())
+func packUserSnapshots(slackClient *slackapi.Client, db *pgx.Conn) {
+	users, err := slackClient.Users(context.Background())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "slackdump 'GetUsers' failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed to list users: %v\n", err)
 		return
 	}
 
 	count := 0
 	for _, user := range users {
-		jsonData, err := json.Marshal(user)
+		var ids struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(user, &ids); err != nil || ids.ID == "" {
+			fmt.Fprintf(os.Stderr, "failed to parse user: %v\n", err)
+			continue
+		}
+		jsonData, err := stripKeys(user, volatileUserKeys...)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "JSON marshal failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "failed to parse user %s: %v\n", ids.ID, err)
 			continue
 		}
 		// archived avatar pointers and avatar since are embedded after insertion, so they
@@ -50,19 +69,19 @@ func packUserSnapshots(sd *slackdump.Session, db *pgx.Conn) {
 				WHERE data #- '{profile,archived_avatar_72_id}' #- '{profile,archived_avatar_512_id}' #- '{profile,archived_avatar_since}' = $2::jsonb
 			)
 		`
-		tag, err := db.Exec(context.Background(), query, user.ID, string(jsonData))
+		tag, err := db.Exec(context.Background(), query, ids.ID, string(jsonData))
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == dbutils.ErrCodeUniqueConstraintViolation {
 				// user is up-to-date
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "insert failed for user %s: %v\n", user.ID, err)
+			fmt.Fprintf(os.Stderr, "insert failed for user %s: %v\n", ids.ID, err)
 			continue
 		}
 
 		if tag.RowsAffected() > 0 {
-			fmt.Printf("Inserted new snapshot for user %s\n", user.ID)
+			fmt.Printf("Inserted new snapshot for user %s\n", ids.ID)
 			count++
 		}
 	}

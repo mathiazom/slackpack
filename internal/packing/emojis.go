@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	. "github.com/mathiazom/slackpack/internal/dbutils"
 	. "github.com/mathiazom/slackpack/internal/seaweedfs"
-	"github.com/rusq/slackdump/v3"
+	"github.com/mathiazom/slackpack/internal/slackapi"
 	"io"
 	"net/http"
 	"os"
@@ -16,10 +16,10 @@ import (
 	"strings"
 )
 
-func PackEmojis(sd *slackdump.Session, db *pgx.Conn, seaweedMasterUrl string) {
-	emojis, err := sd.DumpEmojis(context.Background())
+func PackEmojis(slackClient *slackapi.Client, db *pgx.Conn, seaweedMasterUrl string) {
+	emojis, err := slackClient.Emoji(context.Background())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "slackdump 'DumpEmojis' failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed to list emoji: %v\n", err)
 		return
 	}
 

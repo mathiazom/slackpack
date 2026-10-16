@@ -1,14 +1,13 @@
 package packing
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5"
 	. "github.com/mathiazom/slackpack/internal/seaweedfs"
-	"github.com/rusq/slackdump/v3"
+	"github.com/mathiazom/slackpack/internal/slackapi"
 )
 
 // archiveMessageFiles resolves each file attached to a message to an archived copy in
@@ -17,7 +16,7 @@ import (
 // know about the `file` table. Returns the updated JSON even when some
 // files failed to archive, so the message is still stored and the failed files can be
 // retried on a later pack run.
-func archiveMessageFiles(db *pgx.Conn, sd *slackdump.Session, seaweedMasterUrl string, jsonData []byte) ([]byte, error) {
+func archiveMessageFiles(db *pgx.Conn, slackClient *slackapi.Client, seaweedMasterUrl string, jsonData []byte) ([]byte, error) {
 	var message map[string]interface{}
 	if err := json.Unmarshal(jsonData, &message); err != nil {
 		return jsonData, fmt.Errorf("failed to parse message JSON: %w", err)
@@ -44,7 +43,7 @@ func archiveMessageFiles(db *pgx.Conn, sd *slackdump.Session, seaweedMasterUrl s
 			name = slackFileId
 		}
 
-		fileId, fields, err := archiveMessageFile(db, sd, seaweedMasterUrl, slackFileId, name, downloadUrl)
+		fileId, fields, err := archiveMessageFile(db, slackClient, seaweedMasterUrl, slackFileId, name, downloadUrl)
 		if err != nil {
 			if firstErr == nil {
 				firstErr = err
@@ -67,7 +66,7 @@ func archiveMessageFiles(db *pgx.Conn, sd *slackdump.Session, seaweedMasterUrl s
 
 // archiveMessageFile resolves a Slack file to its archived copy, archiving it on first
 // sight, along with the fields to embed for file passes done already.
-func archiveMessageFile(db *pgx.Conn, sd *slackdump.Session, seaweedMasterUrl, slackFileId, name, downloadUrl string) (string, map[string]interface{}, error) {
+func archiveMessageFile(db *pgx.Conn, slackClient *slackapi.Client, seaweedMasterUrl, slackFileId, name, downloadUrl string) (string, map[string]interface{}, error) {
 	var fileId string
 	var convertedFileId, probedCodec, thumbFileId, posterFileId *string
 	var convertedWidth, convertedHeight, probedWidth, probedHeight, thumbWidth, thumbHeight, posterWidth, posterHeight *int
@@ -101,12 +100,12 @@ func archiveMessageFile(db *pgx.Conn, sd *slackdump.Session, seaweedMasterUrl, s
 		return "", nil, fmt.Errorf("failed to check file existence '%s': %w", slackFileId, err)
 	}
 
-	var data bytes.Buffer
-	if err := sd.Client().GetFile(downloadUrl, &data); err != nil {
+	data, err := slackClient.Download(context.Background(), downloadUrl)
+	if err != nil {
 		return "", nil, fmt.Errorf("download failed for file '%s': %w", slackFileId, err)
 	}
 
-	fileId, err = UploadToSeaweedFS(seaweedMasterUrl, data.Bytes(), name)
+	fileId, err = UploadToSeaweedFS(seaweedMasterUrl, data, name)
 	if err != nil {
 		return "", nil, fmt.Errorf("upload failed for file '%s': %w", slackFileId, err)
 	}

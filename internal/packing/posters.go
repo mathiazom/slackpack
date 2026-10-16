@@ -3,14 +3,10 @@ package packing
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"image"
-	"net/http"
-	"net/url"
 
 	. "github.com/mathiazom/slackpack/internal/seaweedfs"
-	"github.com/rusq/slack"
 	"golang.org/x/image/draw"
 )
 
@@ -40,12 +36,16 @@ func (p posterFile) fields() map[string]interface{} {
 	}
 }
 
-// posterPass archives Slack's poster frame of every archived video. Like the
-// thumbnail pass it reads from Slack, so it only backfills files still there; a
-// poster that's gone, or that Slack never made, is never retried.
+// slackPosterKey is Slack's poster frame of a video, at the video's resolution.
+const slackPosterKey = "thumb_video"
+
+// posterPass archives Slack's poster frame of every archived video that has one. Like
+// the thumbnail pass it reads from Slack, so it only backfills files still there; a
+// poster that's gone is never retried.
 var posterPass = filePass{
 	name:         "poster",
 	mimetypes:    posterMimetypes,
+	where:        "coalesce(f.value->>'" + slackPosterKey + "', '') <> ''",
 	embeddedKey:  posterFileIdKey,
 	failedColumn: "poster_failed_at",
 	process:      posterFileOf,
@@ -64,10 +64,7 @@ func posterFileOf(deps filePassDeps, file pendingMessageFile) (map[string]interf
 		return posterFile{*posterFileId, *posterWidth, *posterHeight}.fields(), nil
 	}
 
-	posterUrl, err := fetchSlackThumbVideoUrl(deps, file.slackFileId)
-	if err != nil {
-		return nil, err
-	}
+	posterUrl, _ := file.object[slackPosterKey].(string)
 	data, err := downloadSlackThumb(deps, posterUrl)
 	if err != nil {
 		return nil, err
@@ -95,48 +92,6 @@ func posterFileOf(deps filePassDeps, file pendingMessageFile) (map[string]interf
 
 	fmt.Printf("Archived poster of file '%s' (%dx%d)\n", file.slackFileId, width, height)
 	return posterFile{uploadedId, width, height}.fields(), nil
-}
-
-// fetchSlackThumbVideoUrl looks up a video's thumb_video with a raw files.info call,
-// as slackdump's typed File has no such field and drops it from the message JSON.
-// It's errFileUnprocessable when the file is gone from Slack or has no poster.
-func fetchSlackThumbVideoUrl(deps filePassDeps, slackFileId string) (string, error) {
-	client, err := deps.slackAuth.HTTPClient()
-	if err != nil {
-		return "", fmt.Errorf("failed to create Slack HTTP client: %w", err)
-	}
-	resp, err := client.PostForm(slack.APIURL+"files.info", url.Values{
-		"token": {deps.slackAuth.SlackToken()},
-		"file":  {slackFileId},
-	})
-	if err != nil {
-		return "", fmt.Errorf("files.info failed: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("files.info failed with status: %d", resp.StatusCode)
-	}
-
-	var info struct {
-		Ok    bool   `json:"ok"`
-		Error string `json:"error"`
-		File  struct {
-			ThumbVideo string `json:"thumb_video"`
-		} `json:"file"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		return "", fmt.Errorf("failed to parse files.info response: %w", err)
-	}
-	switch {
-	// hidden_by_limit is a free plan's history limit, lifted only by upgrading.
-	case info.Error == "file_not_found" || info.Error == "file_deleted" || info.Error == "hidden_by_limit":
-		return "", fmt.Errorf("%w: file is gone: %s", errFileUnprocessable, info.Error)
-	case !info.Ok:
-		return "", fmt.Errorf("files.info failed: %s", info.Error)
-	case info.File.ThumbVideo == "":
-		return "", fmt.Errorf("%w: Slack has no poster for it", errFileUnprocessable)
-	}
-	return info.File.ThumbVideo, nil
 }
 
 // scaleToFit scales an image down so its longest side is at most maxSize.

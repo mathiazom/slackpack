@@ -9,12 +9,11 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
-	"net/http"
 	"path"
 	"strings"
 
 	. "github.com/mathiazom/slackpack/internal/seaweedfs"
-	"github.com/rusq/slack"
+	"github.com/mathiazom/slackpack/internal/slackapi"
 	_ "golang.org/x/image/webp"
 )
 
@@ -115,17 +114,16 @@ func thumbnailFile(deps filePassDeps, file pendingMessageFile) (map[string]inter
 }
 
 // downloadSlackThumb downloads a Slack thumbnail, which is errFileUnprocessable when
-// it's gone (403/404/410).
+// it's gone.
 func downloadSlackThumb(deps filePassDeps, thumbUrl string) ([]byte, error) {
-	var data bytes.Buffer
-	if err := deps.sd.Client().GetFile(thumbUrl, &data); err != nil {
-		var statusErr slack.StatusCodeError
-		if errors.As(err, &statusErr) && (statusErr.Code == http.StatusForbidden || statusErr.Code == http.StatusNotFound || statusErr.Code == http.StatusGone) {
-			return nil, fmt.Errorf("%w: thumbnail is gone: %v", errFileUnprocessable, err)
-		}
+	data, err := deps.slackClient.Download(context.Background(), thumbUrl)
+	if errors.Is(err, slackapi.ErrGone) {
+		return nil, fmt.Errorf("%w: thumbnail is %v", errFileUnprocessable, err)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("download failed: %w", err)
 	}
-	return data.Bytes(), nil
+	return data, nil
 }
 
 func decodeImage(r io.Reader) (image.Image, error) {

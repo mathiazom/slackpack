@@ -3,13 +3,14 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 
 	. "github.com/mathiazom/slackpack/internal/databaseclient"
 	. "github.com/mathiazom/slackpack/internal/migrate"
 	. "github.com/mathiazom/slackpack/internal/packing"
-	. "github.com/mathiazom/slackpack/internal/slackdumpclient"
+	"github.com/mathiazom/slackpack/internal/slackapi"
 )
 
 func main() {
@@ -29,8 +30,9 @@ func main() {
 		return
 	}
 
-	sd, slackAuth := CreateSlackdumpClient()
-	if sd == nil {
+	slackClient, err := slackapi.Connect(context.Background(), os.Getenv("SLACK_AUTH_TOKEN"), os.Getenv("SLACK_AUTH_COOKIE"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Connecting to Slack failed: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -44,16 +46,16 @@ func main() {
 	seaweedMasterUrl := os.Getenv("SEAWEEDFS_MASTER_URL")
 
 	if packAll || *packChannelFlag || *packMessageFlag {
-		channels, err := PackChannels(sd, db)
+		channelIds, err := PackChannels(slackClient, db)
 		if err == nil && (packAll || *packMessageFlag) {
-			PackMessagesFromChannels(channels, sd, slackAuth, db, seaweedMasterUrl)
+			PackMessagesFromChannels(channelIds, slackClient, db, seaweedMasterUrl)
 		}
 	}
 
 	if packAll || *packUserFlag {
-		PackUsers(sd, db, seaweedMasterUrl)
+		PackUsers(slackClient, db, seaweedMasterUrl)
 	}
 	if packAll || *packEmojiFlag {
-		PackEmojis(sd, db, seaweedMasterUrl)
+		PackEmojis(slackClient, db, seaweedMasterUrl)
 	}
 }

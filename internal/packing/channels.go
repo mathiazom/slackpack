@@ -8,23 +8,39 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/mathiazom/slackpack/internal/dbutils"
-	"github.com/rusq/slackdump/v3"
-	sdtypes "github.com/rusq/slackdump/v3/types"
+	"github.com/mathiazom/slackpack/internal/slackapi"
 	"os"
 )
 
-func PackChannels(sd *slackdump.Session, db *pgx.Conn) (sdtypes.Channels, error) {
-	channels, err := sd.GetChannels(context.Background(), "public_channel")
+// volatileChannelKeys change without anything worth a snapshot happening, so they
+// aren't stored.
+var volatileChannelKeys = [][]string{
+	{"updated"},
+	{"properties", "is_dormant"},
+}
+
+// PackChannels snapshots every public channel, returning their IDs.
+func PackChannels(slackClient *slackapi.Client, db *pgx.Conn) ([]string, error) {
+	channels, err := slackClient.PublicChannels(context.Background())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "slackdumpclient 'GetChannels' failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed to list channels: %v\n", err)
 		return nil, err
 	}
 
+	var channelIds []string
 	count := 0
 	for _, channel := range channels {
-		jsonData, err := json.Marshal(channel)
+		var ids struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(channel, &ids); err != nil || ids.ID == "" {
+			fmt.Fprintf(os.Stderr, "failed to parse channel: %v\n", err)
+			continue
+		}
+		channelIds = append(channelIds, ids.ID)
+		jsonData, err := stripKeys(channel, volatileChannelKeys...)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "JSON marshal failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "failed to parse channel %s: %v\n", ids.ID, err)
 			continue
 		}
 		query := `
@@ -43,19 +59,19 @@ func PackChannels(sd *slackdump.Session, db *pgx.Conn) (sdtypes.Channels, error)
 				WHERE data = $2::jsonb
 			)
 		`
-		tag, err := db.Exec(context.Background(), query, channel.ID, string(jsonData))
+		tag, err := db.Exec(context.Background(), query, ids.ID, string(jsonData))
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == dbutils.ErrCodeUniqueConstraintViolation {
 				// channel is up-to-date
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "Insert failed for channel %s: %v\n", channel.ID, err)
+			fmt.Fprintf(os.Stderr, "Insert failed for channel %s: %v\n", ids.ID, err)
 			continue
 		}
 
 		if tag.RowsAffected() > 0 {
-			fmt.Printf("Inserted new snapshot for channel %s\n", channel.ID)
+			fmt.Printf("Inserted new snapshot for channel %s\n", ids.ID)
 			count++
 		}
 	}
@@ -66,5 +82,5 @@ func PackChannels(sd *slackdump.Session, db *pgx.Conn) (sdtypes.Channels, error)
 		fmt.Printf("Inserted %d channel snapshots\n", count)
 	}
 
-	return channels, nil
+	return channelIds, nil
 }

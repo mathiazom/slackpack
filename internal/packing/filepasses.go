@@ -8,8 +8,7 @@ import (
 	"os"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/rusq/slackdump/v3"
-	"github.com/rusq/slackdump/v3/auth"
+	"github.com/mathiazom/slackpack/internal/slackapi"
 )
 
 // errFileUnprocessable, wrapped by a pass's process, signals a file it can never handle
@@ -38,8 +37,7 @@ type filePass struct {
 
 type filePassDeps struct {
 	db               *pgx.Conn
-	sd               *slackdump.Session
-	slackAuth        auth.Provider
+	slackClient      *slackapi.Client
 	seaweedMasterUrl string
 }
 
