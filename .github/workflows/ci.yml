@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Verify modules
+        run: |
+          go mod verify
+          go mod tidy -diff
+
+      # Same build tags as the Dockerfile.
+      - name: Vet
+        run: go vet -tags nodynamic ./...
+
+      - name: Build
+        run: CGO_ENABLED=0 go build -tags nodynamic ./...
+
+      - name: Test
+        run: go test -tags nodynamic ./...
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker build -t slackpack:ci .
+
+      # The binary is static, so check it actually starts on the runtime image.
+      - name: Smoke test
+        run: |
+          docker run --rm --entrypoint sh slackpack:ci -c '
+            test -x /root/slackpack &&
+            test -d /root/migrations &&
+            command -v crond'

@@ -1,0 +1,60 @@
+version: 2
+
+# Weekly on Wednesdays at 06:00 Oslo time. Releases younger than 2 days are skipped.
+# Dependabot can't detect v0.x versions, so v0.x deps are excluded from
+# minor-and-patch by name and get their own PRs. Add new v0.x deps there.
+
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: wednesday
+      time: "06:00"
+      timezone: Europe/Oslo
+    cooldown:
+      default-days: 2
+    groups:
+      # golang.org/x/* is all v0.x, but released together and de facto stable.
+      golang-x:
+        patterns:
+          - "golang.org/x/*"
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+        exclude-patterns:
+          - "golang.org/x/*"
+          - "github.com/gen2brain/heic"
+          - "github.com/ebitengine/purego"
+          - "github.com/jackc/pgservicefile"
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: wednesday
+      time: "06:00"
+      timezone: Europe/Oslo
+    cooldown:
+      default-days: 2
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: wednesday
+      time: "06:00"
+      timezone: Europe/Oslo
+    cooldown:
+      default-days: 2
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
